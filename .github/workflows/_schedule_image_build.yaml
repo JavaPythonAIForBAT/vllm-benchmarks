@@ -427,7 +427,7 @@ jobs:
         retention-days: 1
 
   merge-image:
-    runs-on: linux-amd64-cpu-4
+    runs-on: linux-amd64-cpu-4-buildkit-gy006
     needs: build-push-digest
     if: ${{ inputs.should_push && !inputs.temp_only }}
     steps:
