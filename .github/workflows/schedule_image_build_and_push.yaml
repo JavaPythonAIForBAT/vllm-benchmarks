@@ -99,6 +99,11 @@ on:
         required: false
         default: '["a2","a3","310p","a5"]'
         type: string
+      sync_only:
+        description: 'Skip image build/merge and only trigger quay.io sync.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   packages: write
@@ -107,7 +112,7 @@ permissions:
 jobs:
   setup-matrix:
     runs-on: linux-amd64-cpu-8-hk
-    if: ${{ github.event_name != 'pull_request' || github.event.label.name == 'image-build' }}
+    if: ${{ !inputs.sync_only && (github.event_name != 'pull_request' || github.event.label.name == 'image-build') }}
     outputs:
       build_meta: ${{ steps.filter.outputs.build_meta }}
     steps:
@@ -131,7 +136,7 @@ jobs:
   image_build:
     name: ${{ matrix.build_meta.name }}
     needs: setup-matrix
-    if: ${{ !((github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'image-build')))
+    if: ${{ !inputs.sync_only && !((github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'image-build')))
         && !(github.event_name == 'workflow_dispatch' && inputs.vllm_commit != '' && inputs.vllm_ascend_commit != '') }}
     strategy:
       fail-fast: false
@@ -155,7 +160,7 @@ jobs:
       swr_temp_repo: ${{ inputs.build_type == 'daily' && 'swr.cn-north-12.myhuaweicloud.com/atlas_inference/vllm-atlas-temp' || 'swr.cn-north-12.myhuaweicloud.com/atlas_ci/vllm-atlas-temp' }}
       # ======================================================================
       
-      should_push: ${{ github.event_name != 'pull_request' }}
+      should_push: ${{ github.repository == 'vllm-project/vllm-ascend' && github.event_name != 'pull_request' }}
       workflow_dispatch_tag: ${{ inputs.tag != 'none' && inputs.tag || '' }}
       branch_ref: ${{ inputs.branch != 'none' && inputs.branch || '' }}
       schedule_tag_pattern: 'main'
@@ -180,7 +185,7 @@ jobs:
   image_build_by_commit:
     name: ${{ matrix.build_meta.name }} (commit mode)
     needs: setup-matrix
-    if: ${{ github.event_name == 'workflow_dispatch'
+    if: ${{ !inputs.sync_only && github.event_name == 'workflow_dispatch'
         && inputs.vllm_commit != ''
         && inputs.vllm_ascend_commit != ''
         && inputs.tag == 'none'
@@ -226,7 +231,7 @@ jobs:
 
   trigger-image-sync:
     name: Trigger quay.io sync
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.image_build.result == 'success' || needs.image_build_by_commit.result == 'success') }}
+    if: ${{ always() && !cancelled() && (inputs.sync_only || (github.event_name != 'pull_request' && (needs.image_build.result == 'success' || needs.image_build_by_commit.result == 'success'))) }}
     needs: [image_build, image_build_by_commit]
     runs-on: linux-amd64-cpu-4
     steps:
